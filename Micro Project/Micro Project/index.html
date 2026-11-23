@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureBank — Login</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+
+<div class="bg-animation">
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon"><i class="fas fa-university"></i></div>
+      <h1>SecureBank</h1>
+      <p>Secure Bank Account Management System</p>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="loginSection">
+      <div class="form-group">
+        <label>Email Address</label>
+        <div class="input-wrap">
+          <i class="fas fa-envelope"></i>
+          <input type="email" id="loginEmail" placeholder="Enter your email" autocomplete="email">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <i class="fas fa-lock"></i>
+          <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="handleLogin()">
+        <i class="fas fa-sign-in-alt"></i> Login
+      </button>
+      <div class="auth-link">
+        Don't have an account? <a href="register.html">Register here</a>
+      </div>
+      <div style="margin-top:1.2rem;padding:0.8rem;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;font-size:0.78rem;color:var(--text-muted)">
+        <strong style="color:var(--accent)">Demo Accounts:</strong><br>
+        Customer: john@bank.com / john123<br>
+        Admin: admin@bank.com / admin123
+      </div>
+    </div>
+
+    <!-- MFA SECTION -->
+    <div id="mfaSection" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="width:60px;height:60px;background:rgba(0,200,81,0.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.5rem;color:var(--success)">
+          <i class="fas fa-shield-alt"></i>
+        </div>
+        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text)">Two-Factor Authentication</h3>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-top:6px">Your OTP has been generated. Please enter it below to continue.</p>
+      </div>
+      <div>
+        <div class="card-title" style="text-align:center;margin-bottom:4px">Your One-Time Password</div>
+        <div class="otp-display" id="otpDisplay">------</div>
+        <p style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-bottom:1rem">
+          <i class="fas fa-clock"></i> Valid for 5 minutes only
+        </p>
+      </div>
+      <div class="form-group">
+        <label>Enter OTP</label>
+        <input type="text" class="otp-input" id="otpInput" placeholder="000000" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'')">
+      </div>
+      <button class="btn btn-primary" onclick="verifyOTP()">
+        <i class="fas fa-check-circle"></i> Verify & Login
+      </button>
+      <div style="text-align:center;margin-top:1rem">
+        <button onclick="backToLogin()" style="background:none;border:none;color:var(--text-muted);font-size:0.85rem;cursor:pointer">
+          <i class="fas fa-arrow-left"></i> Back to Login
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container"></div>
+
+<script src="app.js"></script>
+<script>
+  // Redirect if already logged in
+  window.addEventListener('DOMContentLoaded', () => {
+    const user = Auth.getSession();
+    if (user) {
+      window.location.href = user.role === 'admin' ? 'admin.html' : 'dashboard.html';
+    }
+  });
+
+  let pendingUser = null;
+
+  function handleLogin() {
+    const email    = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value.trim();
+    if (!email || !password) { showToast('Please enter email and password.', 'warning'); return; }
+
+    const user = Auth.login(email, password);
+    if (!user) { showToast('Invalid email or password.', 'error'); return; }
+
+    pendingUser = user;
+
+    // Generate and show OTP
+    const otp = MFA.generateOTP();
+    MFA.storeOTP(otp);
+    document.getElementById('otpDisplay').textContent = otp;
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('mfaSection').style.display   = 'block';
+
+    AuditLog.add(user.id, user.email, 'LOGIN_ATTEMPT', 'OTP generated for MFA');
+    showToast('OTP generated! Please verify to continue.', 'info');
+  }
+
+  function verifyOTP() {
+    const input = document.getElementById('otpInput').value;
+    if (!input || input.length !== 6) { showToast('Enter a valid 6-digit OTP.', 'warning'); return; }
+
+    if (MFA.verifyOTP(input)) {
+      MFA.clearOTP();
+      Auth.setSession(pendingUser);
+      AuditLog.add(pendingUser.id, pendingUser.email, 'MFA_VERIFY', 'OTP verified — login successful');
+      AuditLog.add(pendingUser.id, pendingUser.email, 'LOGIN', 'User logged in successfully');
+      showToast('Login successful! Redirecting...', 'success');
+      setTimeout(() => {
+        window.location.href = pendingUser.role === 'admin' ? 'admin.html' : 'dashboard.html';
+      }, 1000);
+    } else {
+      showToast('Incorrect OTP. Please try again.', 'error');
+    }
+  }
+
+  function backToLogin() {
+    MFA.clearOTP();
+    pendingUser = null;
+    document.getElementById('loginSection').style.display = 'block';
+    document.getElementById('mfaSection').style.display   = 'none';
+    document.getElementById('otpInput').value = '';
+  }
+
+  // Enter key support
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      if (document.getElementById('loginSection').style.display !== 'none') handleLogin();
+      else verifyOTP();
+    }
+  });
+</script>
+</body>
+</html>
+

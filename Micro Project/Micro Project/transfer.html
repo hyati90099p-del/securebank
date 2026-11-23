@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureBank — Transfer</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+<div class="bg-animation"><span></span><span></span><span></span><span></span><span></span></div>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <div class="breadcrumb">Home / <span>Transfer</span></div>
+      <h2><i class="fas fa-exchange-alt" style="color:var(--info)"></i> Transfer Funds</h2>
+      <p>Transfer money to another SecureBank account.</p>
+    </div>
+
+    <div class="txn-card">
+      <div class="balance-info">
+        <div class="bi-label"><i class="fas fa-wallet"></i> Available Balance</div>
+        <div class="bi-val" id="balanceDisplay">&#8377;0.00</div>
+        <div style="font-size:0.78rem;color:var(--text-muted)" id="accInfo">—</div>
+      </div>
+
+      <div class="form-group">
+        <label>Recipient Account Number</label>
+        <div class="input-wrap">
+          <i class="fas fa-id-card"></i>
+          <input type="text" id="toAccount" placeholder="e.g. ACC0000000002" oninput="lookupAccount()">
+        </div>
+        <div id="recipientInfo" style="margin-top:6px;font-size:0.82rem;display:none"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Transfer Amount (&#8377;)</label>
+        <div class="input-wrap">
+          <i class="fas fa-rupee-sign"></i>
+          <input type="number" id="transferAmount" placeholder="Enter amount" min="1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Remarks (optional)</label>
+        <div class="input-wrap">
+          <i class="fas fa-comment-alt"></i>
+          <input type="text" id="transferDesc" placeholder="e.g. Rent payment, Loan repayment">
+        </div>
+      </div>
+
+      <!-- Sample account numbers hint -->
+      <div style="margin-bottom:1.2rem;padding:0.8rem;background:rgba(51,181,229,0.08);border:1px solid rgba(51,181,229,0.2);border-radius:10px;font-size:0.78rem;color:var(--text-muted)">
+        <strong style="color:var(--info)">Test Account Numbers:</strong><br>
+        Jane Smith: ACC0000000002 &nbsp;|&nbsp; Ravi Kumar: ACC0000000003
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;font-size:1rem" onclick="showConfirm()">
+        <i class="fas fa-paper-plane"></i> Transfer Funds
+      </button>
+      <div style="text-align:center;margin-top:1rem">
+        <a href="dashboard.html" style="font-size:0.85rem;color:var(--text-muted)"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box">
+    <div class="confirm-box">
+      <div class="ci">&#128257;</div>
+      <h3>Confirm Transfer</h3>
+      <p>Transfer to <strong id="confirmTo"></strong></p>
+      <div class="confirm-amount" id="confirmAmt">&#8377;0</div>
+      <p id="confirmDesc" style="font-size:0.82rem;color:var(--text-muted)"></p>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">Balance after: <strong id="balAfter" style="color:var(--accent)"></strong></p>
+      <div class="modal-actions mt-3">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="doTransfer()"><i class="fas fa-check"></i> Confirm Transfer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+<script src="app.js"></script>
+<script>
+  const user = Auth.requireAuth();
+  if (user && user.role === 'admin') window.location.href = 'admin.html';
+  let userAccount = null;
+
+  if (user) {
+    renderSidebar('transfer');
+    userAccount = AccountOps.getByCustomer(user.id);
+    if (userAccount) {
+      document.getElementById('balanceDisplay').innerHTML = formatCurrency(userAccount.balance);
+      document.getElementById('accInfo').textContent = `${userAccount.accountNumber} | ${userAccount.accountType}`;
+    }
+  }
+
+  function lookupAccount() {
+    const num  = document.getElementById('toAccount').value.trim();
+    const info = document.getElementById('recipientInfo');
+    if (num.length < 5) { info.style.display='none'; return; }
+
+    const acc = AccountOps.getByNumber(num);
+    if (!acc) {
+      info.style.display = 'block';
+      info.style.color = 'var(--danger)';
+      info.textContent = '✗ Account not found';
+    } else if (acc.id === userAccount.id) {
+      info.style.display = 'block';
+      info.style.color = 'var(--warning)';
+      info.textContent = '⚠ Cannot transfer to your own account';
+    } else {
+      const customers = DB.get('customers');
+      const owner = customers.find(c => c.id === acc.customerId);
+      info.style.display = 'block';
+      info.style.color = 'var(--success)';
+      info.textContent = `✓ ${owner ? owner.name : 'Unknown'} — ${acc.accountType} Account`;
+    }
+  }
+
+  function showConfirm() {
+    const toNum = document.getElementById('toAccount').value.trim();
+    const amt   = parseFloat(document.getElementById('transferAmount').value);
+    const desc  = document.getElementById('transferDesc').value.trim();
+
+    if (!toNum)              { showToast('Enter recipient account number.', 'warning'); return; }
+    if (!amt || amt <= 0)   { showToast('Enter a valid transfer amount.', 'warning'); return; }
+    if (amt > userAccount.balance) { showToast('Insufficient balance.', 'error'); return; }
+
+    const toAcc = AccountOps.getByNumber(toNum);
+    if (!toAcc)              { showToast('Recipient account not found.', 'error'); return; }
+    if (toAcc.id === userAccount.id) { showToast('Cannot transfer to your own account.', 'error'); return; }
+
+    const customers = DB.get('customers');
+    const owner = customers.find(c => c.id === toAcc.customerId);
+    document.getElementById('confirmTo').textContent = `${owner ? owner.name : toNum} (${toNum})`;
+    document.getElementById('confirmAmt').innerHTML  = formatCurrency(amt);
+    document.getElementById('confirmDesc').textContent = desc ? `Remark: ${desc}` : '';
+    document.getElementById('balAfter').innerHTML = formatCurrency(userAccount.balance - amt);
+    document.getElementById('confirmModal').classList.add('show');
+  }
+
+  function closeModal() { document.getElementById('confirmModal').classList.remove('show'); }
+
+  function doTransfer() {
+    const toNum = document.getElementById('toAccount').value.trim();
+    const amt   = parseFloat(document.getElementById('transferAmount').value);
+    const desc  = document.getElementById('transferDesc').value.trim() || 'Fund Transfer';
+    closeModal();
+
+    const result = AccountOps.transfer(userAccount.id, toNum, amt, desc);
+    if (result.success) {
+      userAccount.balance = result.balance;
+      document.getElementById('balanceDisplay').innerHTML = formatCurrency(result.balance);
+      document.getElementById('toAccount').value       = '';
+      document.getElementById('transferAmount').value  = '';
+      document.getElementById('transferDesc').value    = '';
+      document.getElementById('recipientInfo').style.display = 'none';
+      AuditLog.add(user.id, user.email, 'TRANSFER', `Transferred ${amt} to ${toNum}`);
+      showToast(`Successfully transferred ${formatCurrency(amt)}!`, 'success');
+    } else {
+      showToast(result.msg, 'error');
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureBank — Transaction History</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+<div class="bg-animation"><span></span><span></span><span></span><span></span><span></span></div>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <div class="breadcrumb">Home / <span>Transaction History</span></div>
+      <h2><i class="fas fa-history text-accent"></i> Transaction History</h2>
+      <p>All your account transactions in one place.</p>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="stats-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card">
+        <div class="stat-icon green"><i class="fas fa-arrow-down"></i></div>
+        <div><div class="stat-label">Total Credits</div><div class="stat-value" id="totalCredit">&#8377;0</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon red"><i class="fas fa-arrow-up"></i></div>
+        <div><div class="stat-label">Total Debits</div><div class="stat-value" id="totalDebit">&#8377;0</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon gold"><i class="fas fa-receipt"></i></div>
+        <div><div class="stat-label">Total Transactions</div><div class="stat-value" id="totalCount">0</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <!-- Filter Bar -->
+      <div class="d-flex justify-between" style="margin-bottom:1.2rem;flex-wrap:wrap;gap:10px">
+        <div class="filter-bar" style="margin-bottom:0">
+          <button class="filter-btn active" onclick="filterTxns('all', this)">All</button>
+          <button class="filter-btn" onclick="filterTxns('Deposit', this)">Deposits</button>
+          <button class="filter-btn" onclick="filterTxns('Withdrawal', this)">Withdrawals</button>
+          <button class="filter-btn" onclick="filterTxns('Transfer', this)">Transfers</button>
+        </div>
+        <input type="text" id="searchTxn" placeholder="&#128269; Search..." oninput="searchTxns()"
+          style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:var(--text);font-size:0.82rem;width:200px">
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Description</th>
+              <th>Amount</th>
+              <th>Balance After</th>
+              <th>Date &amp; Time</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="txnTableBody">
+            <tr><td colspan="7" class="text-center text-muted" style="padding:2rem">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="toast-container"></div>
+<script src="app.js"></script>
+<script>
+  const user = Auth.requireAuth();
+  if (user && user.role === 'admin') window.location.href = 'admin.html';
+  let allTxns = [];
+  let currentFilter = 'all';
+
+  if (user) {
+    renderSidebar('history');
+    const acc = AccountOps.getByCustomer(user.id);
+    if (acc) {
+      allTxns = TxnOps.getByAccount(acc.id);
+
+      let credits = 0, debits = 0;
+      allTxns.forEach(t => {
+        if (t.type === 'Deposit')                 credits += t.amount;
+        if (t.type === 'Withdrawal' || t.type === 'Transfer') debits += t.amount;
+      });
+      document.getElementById('totalCredit').innerHTML = formatCurrency(credits);
+      document.getElementById('totalDebit').innerHTML  = formatCurrency(debits);
+      document.getElementById('totalCount').textContent = allTxns.length;
+
+      renderTable(allTxns);
+    }
+  }
+
+  function renderTable(txns) {
+    const tbody = document.getElementById('txnTableBody');
+    if (txns.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-inbox"></i>No transactions found.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = txns.map((t, i) => {
+      const isCredit = t.type === 'Deposit';
+      return `<tr>
+        <td style="color:var(--text-muted);font-size:0.8rem">${i+1}</td>
+        <td>${getTypeBadge(t.type)}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.description}">${t.description}</td>
+        <td class="${isCredit?'amount-credit':'amount-debit'}">${isCredit?'+':'-'}${formatCurrency(t.amount)}</td>
+        <td>${formatCurrency(t.balanceAfter)}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);white-space:nowrap">${formatDate(t.date)}</td>
+        <td><span class="badge badge-success">${t.status}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterTxns(type, btn) {
+    currentFilter = type;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = type === 'all' ? allTxns : allTxns.filter(t => t.type === type);
+    const search = document.getElementById('searchTxn').value.toLowerCase();
+    renderTable(filtered.filter(t => !search || t.description.toLowerCase().includes(search)));
+  }
+
+  function searchTxns() {
+    const search = document.getElementById('searchTxn').value.toLowerCase();
+    const base   = currentFilter === 'all' ? allTxns : allTxns.filter(t => t.type === currentFilter);
+    renderTable(search ? base.filter(t => t.description.toLowerCase().includes(search)) : base);
+  }
+</script>
+</body>
+</html>

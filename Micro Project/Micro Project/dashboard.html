@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureBank — Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+<div class="bg-animation"><span></span><span></span><span></span><span></span><span></span></div>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <div class="breadcrumb">Home / <span>Dashboard</span></div>
+      <h2>Dashboard</h2>
+      <p id="welcomeMsg">Welcome back!</p>
+    </div>
+
+    <!-- Balance Card -->
+    <div class="balance-card">
+      <div class="balance-label"><i class="fas fa-wallet"></i> &nbsp;Available Balance</div>
+      <div class="balance-amount" id="balanceDisplay">&#8377;0.00</div>
+      <div class="balance-acc">Account No: <span id="accNumDisplay">—</span> &nbsp;|&nbsp; Type: <span id="accTypeDisplay">—</span></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon green"><i class="fas fa-arrow-down"></i></div>
+        <div><div class="stat-label">Total Deposits</div><div class="stat-value" id="statDeposit">&#8377;0</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon red"><i class="fas fa-arrow-up"></i></div>
+        <div><div class="stat-label">Total Withdrawals</div><div class="stat-value" id="statWithdraw">&#8377;0</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon blue"><i class="fas fa-exchange-alt"></i></div>
+        <div><div class="stat-label">Total Transfers</div><div class="stat-value" id="statTransfer">&#8377;0</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon gold"><i class="fas fa-receipt"></i></div>
+        <div><div class="stat-label">Transactions</div><div class="stat-value" id="statCount">0</div></div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+      <a href="deposit.html" class="action-btn">
+        <i class="fas fa-plus-circle ab-green"></i><span>Deposit</span>
+      </a>
+      <a href="withdraw.html" class="action-btn">
+        <i class="fas fa-minus-circle ab-red"></i><span>Withdraw</span>
+      </a>
+      <a href="transfer.html" class="action-btn">
+        <i class="fas fa-exchange-alt ab-blue"></i><span>Transfer</span>
+      </a>
+      <a href="history.html" class="action-btn">
+        <i class="fas fa-history ab-gold"></i><span>History</span>
+      </a>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="card">
+      <div class="d-flex justify-between mb-2">
+        <div class="section-title" style="margin-bottom:0"><i class="fas fa-history"></i> Recent Transactions</div>
+        <a href="history.html" style="font-size:0.82rem;color:var(--accent)">View All <i class="fas fa-arrow-right"></i></a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Description</th>
+              <th>Amount</th>
+              <th>Balance After</th>
+              <th>Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="recentTxns">
+            <tr><td colspan="6" class="text-center text-muted" style="padding:2rem">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="toast-container"></div>
+<script src="app.js"></script>
+<script>
+  const user = Auth.requireAuth();
+  if (user && user.role === 'admin') window.location.href = 'admin.html';
+
+  if (user) {
+    renderSidebar('dashboard');
+    document.getElementById('welcomeMsg').textContent = `Welcome back, ${user.name}! 👋`;
+
+    const acc = AccountOps.getByCustomer(user.id);
+    if (acc) {
+      document.getElementById('balanceDisplay').innerHTML  = formatCurrency(acc.balance);
+      document.getElementById('accNumDisplay').textContent = acc.accountNumber;
+      document.getElementById('accTypeDisplay').textContent= acc.accountType;
+
+      const txns = TxnOps.getByAccount(acc.id);
+      let deposits=0, withdrawals=0, transfers=0;
+      txns.forEach(t => {
+        if (t.type==='Deposit')    deposits    += t.amount;
+        if (t.type==='Withdrawal') withdrawals += t.amount;
+        if (t.type==='Transfer')   transfers   += t.amount;
+      });
+      document.getElementById('statDeposit').innerHTML  = formatCurrency(deposits);
+      document.getElementById('statWithdraw').innerHTML = formatCurrency(withdrawals);
+      document.getElementById('statTransfer').innerHTML = formatCurrency(transfers);
+      document.getElementById('statCount').textContent  = txns.length;
+
+      const recent = txns.slice(0,5);
+      const tbody  = document.getElementById('recentTxns');
+      if (recent.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><i class="fas fa-inbox"></i>No transactions yet</td></tr>';
+      } else {
+        tbody.innerHTML = recent.map(t => `
+          <tr>
+            <td>${getTypeBadge(t.type)}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description}</td>
+            <td class="${t.type==='Deposit'?'amount-credit':'amount-debit'}">${t.type==='Deposit'?'+':'-'}${formatCurrency(t.amount)}</td>
+            <td>${formatCurrency(t.balanceAfter)}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted)">${formatDate(t.date)}</td>
+            <td><span class="badge badge-success">${t.status}</span></td>
+          </tr>`).join('');
+      }
+    }
+  }
+</script>
+</body>
+</html>
+
